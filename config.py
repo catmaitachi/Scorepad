@@ -1,91 +1,95 @@
 from dataclasses import dataclass, field
-from __future__ import annotations
 from pathlib import Path
 
-# * Rotas ───────────────────────────────────────────────────────────
+ROOT_DIR = Path(__file__).parent
+OUTPUT_DIR = ROOT_DIR / "output"
+DATA_RAW = ROOT_DIR / "data" / "raw"
+DATA_PROCESSED = ROOT_DIR / "data" / "processed"
 
-ROOT_DIR        = Path(__file__).parent
-OUTPUT_DIR      = ROOT_DIR / 'output'
-DATA_RAW        = ROOT_DIR / 'data' / 'raw'
-DATA_PROCESSED  = ROOT_DIR / 'data' / 'processed'
-
-# * Configurações de coleta ─────────────────────────────────────────
 
 @dataclass
 class FetchConfig:
-    
-    # Hype mínimo para incluir um jogo na busca
-    min_hype: int = 5
- 
-    # Ordenação dos resultados: "date" | "hype"
+    # Mínimo de hypes para um jogo entrar na busca (filtra títulos sem engajamento)
+    min_hype: int = 1
+
+    # Campo usado para ordenar os resultados da IGDB: "hype" ou "date"
     order_by: str = "hype"
- 
-    # Máximo de jogos futuros a buscar
+
+    # Quantidade máxima de jogos futuros retornados por execução
     max_upcoming: int = 200
- 
-    # Máximo de jogos históricos por estúdio
+
+    # Máximo de jogos históricos buscados por estúdio (limita chamadas à API)
     max_history_per_studio: int = 50
- 
-    # Mínimo de avaliações para um jogo histórico ser considerado
+
+    # Mínimo de avaliações que um jogo precisa ter para entrar no perfil do estúdio
     min_rating_count: int = 10
- 
-    # Pausa entre requisições à API (respeita limite de 4 req/s)
+
+    # Pausa em segundos entre páginas de resultados (respeita rate limit da IGDB)
     request_delay: float = 0.25
 
-# * Configurações de scoring ────────────────────────────────────────
+    # Janela máxima de lançamentos futuros em dias (730 = até 2 anos à frente)
+    max_future_days: int = 730
+
 
 @dataclass
 class ScoringConfig:
-
-    # Nota mínima para um jogo ser considerado "sucesso" no histórico
+    # Nota mínima (0–100) para considerar um jogo "bem-sucedido" no histórico do estúdio
     success_threshold: float = 70.0
- 
-    # Mínimo de jogos no histórico do estúdio para o sinal ser válido
+
+    # Mínimo de jogos com nota válida para construir o perfil de um estúdio
     min_studio_games: int = 2
- 
-    # Valor de hype considerado "máximo" para normalização (acima = 1.0)
-    hype_cap: int = 500
- 
-    # A partir de quantos projetos simultâneos começa a penalizar
+
+    # Teto de hypes para normalização — valores acima são tratados como iguais ao cap
+    hype_cap: int = 600
+
+    # A partir de quantos projetos simultâneos o estúdio começa a ser penalizado
     simultaneous_penalty_start: int = 2
- 
-    # Acima deste número de projetos, penalidade máxima
+
+    # Número de projetos simultâneos em que a penalidade atinge o máximo (score → 0)
     simultaneous_max: int = 4
- 
-    # Pesos dos sinais — mude aqui para rebalancear o modelo
-    signal_weights: dict[str, float] = field(default_factory=lambda: {
-        "studio_history":         3.0,
-        "franchise":              2.5,
-        "hype":                   1.5,
-        "simultaneous_projects":  2.0,
-        "budget":                 1.5,
-        "market_value":           0.0,  # ToDo
-        "gptw":                   0.0,  # ToDo
+
+    # Peso de cada signal no score final — coloque 0.0 para desativar um signal
+    signal_weights: dict = field(default_factory=lambda: {
+        "studio_history":           3.0, # histórico de qualidade do estúdio
+        "hype_franchise":           4.0, # franquia ponderada por recência + hype da comunidade
+        "simultaneous_projects":    0.0, # ToDo: revisar lógica do signal — contagem de simultâneos não está funcionando corretamente
+        "market_value":             0.0, # ToDO — aguardando fonte de dados
+        "gptw":                     0.0, # ToDO — aguardando fonte de dados
     })
 
-# * Configurações de saída ───────────────────────────────────────────────
 
 @dataclass
 class OutputConfig:
-
-    # Nome do arquivo CSV exportado para o Power BI
+    # Nome do arquivo exportado em output/
     csv_filename: str = "predictions.csv"
- 
-    # Colunas incluídas no CSV final
-    csv_columns: list[str] = field(default_factory=lambda: [
-        "game_id", "name", "studio", "release_date",
-        "hypes", "is_new_ip", "chance_success",
-        "confidence", "confidence_label",
+
+    # Colunas que aparecem no CSV final (ordem preservada)
+    csv_columns: list = field(default_factory=lambda: [
+        "game_id",
+        "name",
+        "studio",
+        "release_date",
+        "hypes",
+        "is_new_ip",
+        "chance_success",
+        "confidence",
+        "confidence_label",
+        "cover_url",
+        "studio_logo_url",
     ])
- 
-    # Ordenação padrão do CSV: "chance_success" | "release_date" | "hypes"
+
+    # Coluna usada para ordenar o CSV (descendente)
     sort_by: str = "chance_success"
- 
-    # Mostrar detalhes de cada sinal no CSV (adiciona colunas por sinal)
-    include_signal_detail: bool = False
 
-# * Instâncias das configurações ─────────────────────────────────────────
+    # Se True, adiciona colunas com o score e a nota de cada signal individualmente
+    include_signal_detail: bool = True
 
-fetch    = FetchConfig()
-output   = OutputConfig()
-scoring  = ScoringConfig()
+
+@dataclass
+class Config:
+    fetch: FetchConfig = field(default_factory=FetchConfig)
+    scoring: ScoringConfig = field(default_factory=ScoringConfig)
+    output: OutputConfig = field(default_factory=OutputConfig)
+
+
+config = Config()
